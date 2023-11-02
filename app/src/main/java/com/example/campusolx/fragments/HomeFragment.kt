@@ -10,19 +10,18 @@ import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.widget.Toast
+import androidx.lifecycle.lifecycleScope
 import androidx.recyclerview.widget.LinearLayoutManager
-import com.airbnb.lottie.utils.Utils
-import com.example.campusolx.R
 import com.example.campusolx.RetrofitInstance
 import com.example.campusolx.activites.AdDetailsActivity
 import com.example.campusolx.adapters.AdapterAd
-import com.example.campusolx.adapters.AdapterCategory
+import com.example.campusolx.data.AuthDatabase
+import com.example.campusolx.data.AuthTokenRepository
 import com.example.campusolx.models.ModelAd
 import com.example.campusolx.dataclass.Product
 import com.example.campusolx.interfaces.ProductApi
 import com.example.campusolx.databinding.FragmentHomeBinding
-import com.example.campusolx.interfaces.RvListenerCategory
-import com.example.campusolx.models.ModelCategory
+import kotlinx.coroutines.launch
 import retrofit2.Call
 import retrofit2.Callback
 import retrofit2.Response
@@ -34,8 +33,8 @@ class HomeFragment : Fragment(), AdapterAd.OnAdClickListener {
     private lateinit var mContext: Context
     private lateinit var productApi: ProductApi
     private lateinit var adapterAd: AdapterAd
+    private lateinit var authTokenRepository: AuthTokenRepository
     private var adArrayList: ArrayList<ModelAd> = ArrayList()
-    private lateinit var accessToken: String
 
     override fun onAttach(context: Context) {
         super.onAttach(context)
@@ -57,20 +56,26 @@ class HomeFragment : Fragment(), AdapterAd.OnAdClickListener {
         val retrofit = RetrofitInstance.getRetrofitInstance()
         productApi = retrofit.create(ProductApi::class.java)
 
-        // Get the access token from shared preferences
-        val sharedPreference = mContext.getSharedPreferences("Account_Details", Context.MODE_PRIVATE)
-        accessToken = "Bearer " + sharedPreference.getString("accessToken", "") ?: ""
+        // Initialize the Room authToken repository
+        authTokenRepository =
+            AuthTokenRepository(AuthDatabase.getDatabase(requireContext()).authTokenDao())
 
-        // Setup RecyclerView and Adapter
-        adapterAd = AdapterAd(mContext, adArrayList)
-        binding.adsRv.layoutManager = LinearLayoutManager(mContext)
-        binding.adsRv.adapter = adapterAd
+        // Get the access token from Room database
+        lifecycleScope.launch {
+            val authToken = authTokenRepository.getAuthToken()
+            val accessToken = "Bearer " + (authToken?.token ?: "")
 
-        // Set the listener for click events
-        adapterAd.setOnAdClickListener(this)
-        loadCategories()
-        // Fetch and display the products
-        fetchProducts()
+            // Setup RecyclerView and Adapter
+            adapterAd = AdapterAd(mContext, adArrayList)
+            binding.adsRv.layoutManager = LinearLayoutManager(mContext)
+            binding.adsRv.adapter = adapterAd
+
+            // Set the listener for click events
+            adapterAd.setOnAdClickListener(this@HomeFragment)
+
+            // Fetch and display the products using the retrieved access token
+            fetchProducts(accessToken)
+        }
     }
 
     override fun onAdClick(productId: String) {
@@ -80,41 +85,7 @@ class HomeFragment : Fragment(), AdapterAd.OnAdClickListener {
         startActivity(intent)
     }
 
-    private fun loadCategories(){
-
-        val categories = arrayOf(
-            "Coolers",
-            "Electronics",
-            "Furniture",
-            "Books",
-            "Sports",
-            "Nitish Bharat",
-            "Fashion",
-            "Girlfriends"
-        )
-        val categoryIcons = arrayOf(
-            R.drawable.ic_phone,
-            R.drawable.baseline_electrical_services_24,
-            R.drawable.baseline_bed_24,
-            R.drawable.ic_book,
-            R.drawable.baseline_sports_handball_24,
-            R.drawable.ic_person,
-            R.drawable.ic_chat,
-            R.drawable.baseline_girl_24
-        )
-
-        val categoryArrayList = ArrayList<ModelCategory>()
-        for(i in 0 until categories.size){
-            val modelCategory = ModelCategory(categories[i], categoryIcons[i])
-            categoryArrayList.add(modelCategory)
-        }
-        val adapterCategory = AdapterCategory(mContext, categoryArrayList, object: RvListenerCategory{
-            override fun onCategoryClick(modelCategory: ModelCategory) {
-            }
-        })
-    }
-
-    private fun fetchProducts() {
+    private fun fetchProducts(accessToken: String) {
         com.example.campusolx.utils.AdLoader.showDialog(mContext, isCancelable = true)
         val call = productApi.getAllProducts(accessToken)
         call.enqueue(object : Callback<List<Product>> {
@@ -167,5 +138,4 @@ class HomeFragment : Fragment(), AdapterAd.OnAdClickListener {
             }
         })
     }
-
 }
